@@ -92,6 +92,12 @@ public:
           camera::base* camera, const float depth_thr,
           const cv::Mat& mask = cv::Mat{});
 
+
+    //jc - adding odom data 
+    void set_robot_pose(const Mat44_t& robot_pose_bw);
+
+    Mat44_t get_robot_pose() const;
+
     /**
      * Set camera pose and refresh rotation and translation
      * @param cam_pose_cw
@@ -235,6 +241,10 @@ public:
     //! camera pose: world -> camera
     bool cam_pose_cw_is_valid_ = false;
     Mat44_t cam_pose_cw_;
+
+    //! robot pose: world -> base_link 
+    bool robot_pose_bw_is_valid_ = false;
+    Mat44_t robot_pose_bw_;
 
     //! reference keyframe for tracking
     keyframe* ref_keyfrm_ = nullptr;

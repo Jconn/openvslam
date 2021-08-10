@@ -22,6 +22,7 @@ namespace optimize {
 pose_optimizer::pose_optimizer(const unsigned int num_trials, const unsigned int num_each_iter)
     : num_trials_(num_trials), num_each_iter_(num_each_iter) {}
 
+//the g2o nuts and bolts of optimizing once the frame has been decided as trac
 unsigned int pose_optimizer::optimize(data::frame& frm) const {
     // 1. Construct an optimizer
 

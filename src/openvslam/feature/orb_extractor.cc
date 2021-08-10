@@ -287,6 +287,7 @@ void orb_extractor::compute_fast_keypoints(std::vector<std::vector<cv::KeyPoint>
 #ifdef USE_OPENMP
 #pragma omp parallel for
 #endif
+    //computes orbs for multiple image scalings
     for (unsigned int level = 0; level < orb_params_.num_levels_; ++level) {
         const float scale_factor = scale_factors_.at(level);
 

@@ -125,6 +125,11 @@ frame::frame(const cv::Mat& img_gray, const cv::Mat& img_depth, const double tim
     assign_keypoints_to_grid(camera_, undist_keypts_, keypt_indices_in_cells_);
 }
 
+void frame::set_robot_pose(const Mat44_t& robot_pose_bw) {
+    robot_pose_bw_is_valid_ = true;
+    robot_pose_bw_ = robot_pose_bw;
+}
+
 void frame::set_cam_pose(const Mat44_t& cam_pose_cw) {
     cam_pose_cw_is_valid_ = true;
     cam_pose_cw_ = cam_pose_cw;

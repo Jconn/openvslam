@@ -75,7 +75,10 @@ public:
     //! Track a stereo frame
     //! (Note: Left and Right images must be stereo-rectified)
     std::shared_ptr<Mat44_t> track_stereo_image(const cv::Mat& left_img_rect, const cv::Mat& right_img_rect, const double timestamp, const cv::Mat& mask = cv::Mat{});
-
+    
+    Mat44_t robot_pose_;
+    bool robot_pose_updated_ = false;
+    void update_odometry( const Mat44_t& robot_pose);
     //! Track an RGBD frame
     //! (Note: RGB and Depth images must be aligned)
     std::shared_ptr<Mat44_t> track_RGBD_image(const cv::Mat& img, const cv::Mat& depthmap, const double timestamp, const cv::Mat& mask = cv::Mat{});

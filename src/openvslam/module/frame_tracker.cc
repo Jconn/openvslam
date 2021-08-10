@@ -12,6 +12,7 @@
 namespace openvslam {
 namespace module {
 
+//the bolts of tracking between frames in the local tracker
 frame_tracker::frame_tracker(camera::base* camera, const unsigned int num_matches_thr)
     : camera_(camera), num_matches_thr_(num_matches_thr), pose_optimizer_() {}
 
@@ -19,7 +20,15 @@ bool frame_tracker::motion_based_track(data::frame& curr_frm, const data::frame&
     match::projection projection_matcher(0.9, true);
 
     // Set the initial pose by using the motion model
-    curr_frm.set_cam_pose(velocity * last_frm.cam_pose_cw_);
+    // but if we have a valid odometry value, set the pose with that instead
+    if(curr_frm.robot_pose_bw_is_valid_)
+    {
+        curr_frm.set_cam_pose(curr_frm.robot_pose_bw_);
+    }
+    else
+    {
+        curr_frm.set_cam_pose(velocity * last_frm.cam_pose_cw_);
+    }
 
     // Initialize the 2D-3D matches
     std::fill(curr_frm.landmarks_.begin(), curr_frm.landmarks_.end(), nullptr);
@@ -108,6 +117,7 @@ bool frame_tracker::robust_match_based_track(data::frame& curr_frm, const data::
 
     // Pose optimization
     // The initial value is the pose of the previous frame
+    // set the current frame's estimate as the value coming from the last frame! We can replace this with odometry
     curr_frm.set_cam_pose(last_frm.cam_pose_cw_);
     pose_optimizer_.optimize(curr_frm);
 

@@ -179,6 +179,11 @@ std::shared_ptr<Mat44_t> tracking_module::track_stereo_image(const cv::Mat& left
     }
     return cam_pose_wc;
 }
+void tracking_module::update_odometry( const Mat44_t& robot_pose)
+{
+    robot_pose_updated_ = true;
+    robot_pose_ = robot_pose;
+}
 
 std::shared_ptr<Mat44_t> tracking_module::track_RGBD_image(const cv::Mat& img, const cv::Mat& depthmap, const double timestamp, const cv::Mat& mask) {
     const auto start = std::chrono::system_clock::now();
@@ -191,6 +196,10 @@ std::shared_ptr<Mat44_t> tracking_module::track_RGBD_image(const cv::Mat& img, c
 
     // create current frame object
     curr_frm_ = data::frame(img_gray_, img_depth, timestamp, extractor_left_, bow_vocab_, camera_, true_depth_thr_, mask);
+    if(robot_pose_updated_)
+    {
+        curr_frm_.set_robot_pose(robot_pose_);
+    }
 
     track();
 
@@ -251,6 +260,7 @@ void tracking_module::reset() {
     tracking_state_ = tracker_state_t::NotInitialized;
 }
 
+//the main work fn for tracking new images in the local frame
 void tracking_module::track() {
     if (tracking_state_ == tracker_state_t::NotInitialized) {
         tracking_state_ = tracker_state_t::Initializing;
@@ -460,6 +470,7 @@ bool tracking_module::optimize_current_frame_with_local_map() {
     search_local_landmarks();
 
     // optimize the pose
+    // where gps would be integrated
     pose_optimizer_.optimize(curr_frm_);
 
     // count up the number of tracked landmarks
