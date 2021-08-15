@@ -179,10 +179,9 @@ std::shared_ptr<Mat44_t> tracking_module::track_stereo_image(const cv::Mat& left
     }
     return cam_pose_wc;
 }
-void tracking_module::update_odometry( const Mat44_t& robot_pose)
-{
-    robot_pose_updated_ = true;
-    robot_pose_ = robot_pose;
+void tracking_module::update_odometry(const OdometryUpdate& update) {
+    odometry_updated_ = true;
+    odom_update_ = update;
 }
 
 std::shared_ptr<Mat44_t> tracking_module::track_RGBD_image(const cv::Mat& img, const cv::Mat& depthmap, const double timestamp, const cv::Mat& mask) {
@@ -196,9 +195,10 @@ std::shared_ptr<Mat44_t> tracking_module::track_RGBD_image(const cv::Mat& img, c
 
     // create current frame object
     curr_frm_ = data::frame(img_gray_, img_depth, timestamp, extractor_left_, bow_vocab_, camera_, true_depth_thr_, mask);
-    if(robot_pose_updated_)
-    {
-        curr_frm_.set_robot_pose(robot_pose_);
+    if (odometry_updated_) {
+        spdlog::info("setting robot pose for current frame");
+        curr_frm_.set_odom_update(odom_update_);
+        odometry_updated_ = false;
     }
 
     track();
@@ -406,15 +406,18 @@ bool tracking_module::track_current_frame() {
 
     if (tracking_state_ == tracker_state_t::Tracking) {
         // Tracking mode
-        if (twist_is_valid_ && last_reloc_frm_id_ + 2 < curr_frm_.id_) {
+        if ((curr_frm_.odom_updated_ || twist_is_valid_) && last_reloc_frm_id_ + 2 < curr_frm_.id_) {
             // if the motion model is valid
             succeeded = frame_tracker_.motion_based_track(curr_frm_, last_frm_, twist_);
+            spdlog::info("motion tracking");
         }
         if (!succeeded) {
             succeeded = frame_tracker_.bow_match_based_track(curr_frm_, last_frm_, curr_frm_.ref_keyfrm_);
+            spdlog::info("bow tracking");
         }
         if (!succeeded) {
             succeeded = frame_tracker_.robust_match_based_track(curr_frm_, last_frm_, curr_frm_.ref_keyfrm_);
+            spdlog::info("frame tracking");
         }
     }
     else {

@@ -270,6 +270,15 @@ std::shared_ptr<Mat44_t> system::feed_stereo_frame(const cv::Mat& left_img, cons
     return cam_pose_wc;
 }
 
+void system::update_odometry(const Mat44_t& robot_pose, const Vec3_t& linear_vel, const Vec3_t& angular_vel, double timestamp) {
+    OdometryUpdate new_odom;
+    new_odom.position = robot_pose;
+    new_odom.linear_vel = linear_vel;
+    new_odom.angular_vel = angular_vel;
+    new_odom.timestamp = timestamp;
+    tracker_->update_odometry(new_odom);
+}
+
 std::shared_ptr<Mat44_t> system::feed_RGBD_frame(const cv::Mat& rgb_img, const cv::Mat& depthmap, const double timestamp, const cv::Mat& mask) {
     assert(camera_->setup_type_ == camera::setup_type_t::RGBD);
 

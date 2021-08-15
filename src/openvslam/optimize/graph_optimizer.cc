@@ -36,11 +36,13 @@ void graph_optimizer::optimize(data::keyframe* loop_keyfrm, data::keyframe* curr
     // 2. Add vertices
 
     const auto all_keyfrms = map_db_->get_all_keyframes();
+    //jc: what are landmarks in vslam
     const auto all_lms = map_db_->get_all_landmarks();
 
     const unsigned int max_keyfrm_id = map_db_->get_max_keyframe_id();
 
     // Transform the pre-modified poses of all the keyframes to Sim3, and save them
+    // I think Sim3 is a rotation, translation, and scale (affine)
     std::vector<g2o::Sim3, Eigen::aligned_allocator<g2o::Sim3>> Sim3s_cw(max_keyfrm_id + 1);
     // Save the added vertices
     std::vector<internal::sim3::shot_vertex*> vertices(max_keyfrm_id + 1);
@@ -68,7 +70,9 @@ void graph_optimizer::optimize(data::keyframe* loop_keyfrm, data::keyframe* curr
             const Vec3_t trans_cw = keyfrm->get_translation();
             const g2o::Sim3 Sim3_cw(rot_cw, trans_cw, 1.0);
 
+            //sim3cs_cw contain all of the keyframe poses
             Sim3s_cw.at(id) = Sim3_cw;
+            //vertex is the position - the pose of the keyframe
             keyfrm_vtx->setEstimate(Sim3_cw);
         }
 
@@ -112,12 +116,15 @@ void graph_optimizer::optimize(data::keyframe* loop_keyfrm, data::keyframe* curr
         const auto id1 = keyfrm->id_;
         const g2o::Sim3& Sim3_1w = Sim3s_cw.at(id1);
         const g2o::Sim3 Sim3_w1 = Sim3_1w.inverse();
-
+        //jc: the optimization problem comes from there being multiple keyframes referencing eachother at incompatible distances
+        //e.g. point 1 is 5m from point 2, 12 meters from point 3. But point 2 is only 5 meters from point 3
+        //the distances of all these points needs to be unified to lower error as much as possible
         for (auto connected_keyfrm : connected_keyfrms) {
             const auto id2 = connected_keyfrm->id_;
 
             // Except the current vs loop edges,
             // Add the loop edges only over the weight threshold
+            // jc: what are the graph weights for 
             if (!(id1 == curr_keyfrm->id_ && id2 == loop_keyfrm->id_)
                 && keyfrm->graph_node_->get_weight(connected_keyfrm) < min_weight) {
                 continue;
@@ -125,6 +132,7 @@ void graph_optimizer::optimize(data::keyframe* loop_keyfrm, data::keyframe* curr
 
             // Compute the relative camera pose
             const g2o::Sim3& Sim3_2w = Sim3s_cw.at(id2);
+            //multiply the sim3 weights by eachother?
             const g2o::Sim3 Sim3_21 = Sim3_2w * Sim3_w1;
 
             // Add a constraint edge
@@ -225,6 +233,8 @@ void graph_optimizer::optimize(data::keyframe* loop_keyfrm, data::keyframe* curr
             const g2o::Sim3 Sim3_21 = Sim3_2w * Sim3_w1;
 
             // Add a constraint edge
+            // this constraint is one pose times the inverse of the other? It seems like its looking for 
+            // the transform from vertex to vertex
             insert_edge(id1, id2, Sim3_21);
         }
     }

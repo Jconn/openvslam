@@ -109,6 +109,8 @@ public:
     //! (Note: Left and Right images must be stereo-rectified)
     std::shared_ptr<Mat44_t> feed_stereo_frame(const cv::Mat& left_img, const cv::Mat& right_img, const double timestamp, const cv::Mat& mask = cv::Mat{});
 
+    void update_odometry(const Mat44_t& robot_pose, const Vec3_t& linear_vel, const Vec3_t& angular_vel, double timestamp);
+
     //! Feed an RGBD frame to SLAM system
     //! (Note: RGB and Depth images must be aligned)
     std::shared_ptr<Mat44_t> feed_RGBD_frame(const cv::Mat& rgb_img, const cv::Mat& depthmap, const double timestamp, const cv::Mat& mask = cv::Mat{});

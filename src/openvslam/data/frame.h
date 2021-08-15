@@ -94,7 +94,7 @@ public:
 
 
     //jc - adding odom data 
-    void set_robot_pose(const Mat44_t& robot_pose_bw);
+    void set_odom_update(const OdometryUpdate odom_update);
 
     Mat44_t get_robot_pose() const;
 
@@ -242,9 +242,11 @@ public:
     bool cam_pose_cw_is_valid_ = false;
     Mat44_t cam_pose_cw_;
 
+
+    Mat44_t get_position_from_odom(void);
     //! robot pose: world -> base_link 
-    bool robot_pose_bw_is_valid_ = false;
-    Mat44_t robot_pose_bw_;
+    bool odom_updated_ = false;
+    OdometryUpdate odometry_;
 
     //! reference keyframe for tracking
     keyframe* ref_keyfrm_ = nullptr;

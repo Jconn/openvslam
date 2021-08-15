@@ -13,6 +13,9 @@
 
 #include <spdlog/spdlog.h>
 
+using AngleAxisd = Eigen::AngleAxisd;
+using Vector3d = Eigen::Vector3d;
+
 namespace openvslam {
 namespace data {
 
@@ -125,9 +128,41 @@ frame::frame(const cv::Mat& img_gray, const cv::Mat& img_depth, const double tim
     assign_keypoints_to_grid(camera_, undist_keypts_, keypt_indices_in_cells_);
 }
 
-void frame::set_robot_pose(const Mat44_t& robot_pose_bw) {
-    robot_pose_bw_is_valid_ = true;
-    robot_pose_bw_ = robot_pose_bw;
+static std::string toString(const Eigen::MatrixXd& mat) {
+    std::stringstream ss;
+    ss << mat;
+    return ss.str();
+}
+
+Mat44_t frame::get_position_from_odom(void) {
+    Mat44_t position = Mat44_t::Identity();
+    if (odom_updated_) {
+        double time_delta = timestamp_ - odometry_.timestamp;
+        //do some dead reckoning to align the odometry timestamp
+        //with the camera timestamp
+        Vec3_t dr_position = odometry_.linear_vel * time_delta;
+        Vec3_t dr_orientation = odometry_.angular_vel * time_delta;
+        Eigen::Quaterniond dr_q;
+        dr_q = AngleAxisd(dr_orientation[0], Vector3d::UnitX()) * AngleAxisd(dr_orientation[1], Vector3d::UnitY()) * AngleAxisd(dr_orientation[2], Vector3d::UnitZ());
+        dr_q.normalize();
+
+        spdlog::info("timestamps: {}, {}", timestamp_, odometry_.timestamp);
+        spdlog::info("position value \n{}\n, and orientation \n{}\n", toString(dr_position), toString(dr_orientation));
+        Eigen::Translation3d dr_translation(dr_position);
+        Eigen::Affine3d dr_affine = (dr_translation * dr_q);
+        //convert the dead reckoning to the camera frame
+        Eigen::Matrix4d dr_mat = dr_affine.inverse().matrix();
+
+        //add the dead reckoning position update to the odom base position
+        position.block<3, 3>(0, 0) = dr_mat.block<3, 3>(0, 0) * odometry_.position.block<3, 3>(0, 0);
+        position.block<3, 1>(0, 3) = dr_mat.block<3, 1>(0, 3) + odometry_.position.block<3, 1>(0, 3);
+    }
+    return position;
+}
+
+void frame::set_odom_update(const OdometryUpdate odom_update) {
+    odom_updated_ = true;
+    odometry_ = odom_update;
 }
 
 void frame::set_cam_pose(const Mat44_t& cam_pose_cw) {

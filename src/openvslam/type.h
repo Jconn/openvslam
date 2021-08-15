@@ -106,6 +106,16 @@ inline Vec2_t operator-(const cv::Point_<T>& v1, const Vec2_t& v2) {
     return v1 + (-v2);
 }
 
+// custom types
+struct OdometryUpdate {
+    //these are in camera frame
+    Mat44_t position;
+    //these are in world frame
+    Vec3_t linear_vel;
+    Vec3_t angular_vel;
+    double timestamp;
+};
+
 } // namespace openvslam
 
 #endif // OPENVSLAM_TYPE_H
