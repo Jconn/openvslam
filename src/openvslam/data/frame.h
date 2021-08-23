@@ -92,9 +92,8 @@ public:
           camera::base* camera, const float depth_thr,
           const cv::Mat& mask = cv::Mat{});
 
-
-    //jc - adding odom data 
-    void set_odom_update(const OdometryUpdate odom_update);
+    //jc - adding odom data
+    void set_odom_update(const std::vector<OdometryUpdate>& odom_updates);
 
     Mat44_t get_robot_pose() const;
 
@@ -242,9 +241,9 @@ public:
     bool cam_pose_cw_is_valid_ = false;
     Mat44_t cam_pose_cw_;
 
-
     Mat44_t get_position_from_odom(void);
-    //! robot pose: world -> base_link 
+    //! robot pose: world -> base_link
+    double max_stale_odom_time_ = .15;
     bool odom_updated_ = false;
     OdometryUpdate odometry_;
 

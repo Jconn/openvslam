@@ -285,11 +285,22 @@ bool initializer::try_initialize_for_stereo(data::frame& curr_frm) {
     return min_num_triangulated_ <= num_valid_depths;
 }
 
+bool initializer::set_initial_pose(const Mat44_t& cam_pose_cw) {
+    init_pose_requested_ = true;
+    init_pose_ = cam_pose_cw;
+    return true;
+}
 bool initializer::create_map_for_stereo(data::frame& curr_frm) {
     assert(state_ == initializer_state_t::Initializing);
 
     // create an initial keyframe
-    curr_frm.set_cam_pose(Mat44_t::Identity());
+    if (init_pose_requested_) {
+        curr_frm.set_cam_pose(init_pose_);
+        init_pose_requested_ = false;
+    }
+    else {
+        curr_frm.set_cam_pose(Mat44_t::Identity());
+    }
     auto curr_keyfrm = new data::keyframe(curr_frm, map_db_, bow_db_);
 
     // compute BoW representation

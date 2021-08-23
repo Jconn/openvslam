@@ -116,6 +116,10 @@ struct OdometryUpdate {
     double timestamp;
 };
 
+struct OdometryComparison {
+    bool operator()(const OdometryUpdate& odom_update, const double& timestamp) { return odom_update.timestamp > timestamp; }
+};
+
 } // namespace openvslam
 
 #endif // OPENVSLAM_TYPE_H

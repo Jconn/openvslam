@@ -140,18 +140,26 @@ Mat44_t frame::get_position_from_odom(void) {
         double time_delta = timestamp_ - odometry_.timestamp;
         //do some dead reckoning to align the odometry timestamp
         //with the camera timestamp
+        spdlog::info("odom time delta of {}, timestamp {}.{}", time_delta, int(odometry_.timestamp), odometry_.timestamp - int(odometry_.timestamp));
         Vec3_t dr_position = odometry_.linear_vel * time_delta;
         Vec3_t dr_orientation = odometry_.angular_vel * time_delta;
         Eigen::Quaterniond dr_q;
         dr_q = AngleAxisd(dr_orientation[0], Vector3d::UnitX()) * AngleAxisd(dr_orientation[1], Vector3d::UnitY()) * AngleAxisd(dr_orientation[2], Vector3d::UnitZ());
         dr_q.normalize();
-
-        spdlog::info("timestamps: {}, {}", timestamp_, odometry_.timestamp);
-        spdlog::info("position value \n{}\n, and orientation \n{}\n", toString(dr_position), toString(dr_orientation));
         Eigen::Translation3d dr_translation(dr_position);
         Eigen::Affine3d dr_affine = (dr_translation * dr_q);
         //convert the dead reckoning to the camera frame
+        //
+        Eigen::Matrix3d rot_cv_to_ros_map_frame;
+
+        //this variable handles transform FROM ros TO cv. Don't know why it was named this way
+        rot_cv_to_ros_map_frame << 0, -1, 0,
+                                0, 0, -1,
+                                1, 0, 0;
+        //dr_affine.prerotate(rot_cv_to_ros_map_frame);
         Eigen::Matrix4d dr_mat = dr_affine.inverse().matrix();
+        
+        spdlog::info("dr mat \n{}\nodom mat\n{}\n", toString(dr_mat), toString(odometry_.position));
 
         //add the dead reckoning position update to the odom base position
         position.block<3, 3>(0, 0) = dr_mat.block<3, 3>(0, 0) * odometry_.position.block<3, 3>(0, 0);
@@ -160,9 +168,16 @@ Mat44_t frame::get_position_from_odom(void) {
     return position;
 }
 
-void frame::set_odom_update(const OdometryUpdate odom_update) {
-    odom_updated_ = true;
-    odometry_ = odom_update;
+void frame::set_odom_update(const std::vector<OdometryUpdate>& odom_updates) {
+
+    odom_updated_ = false;
+    std::vector<OdometryUpdate>::const_reverse_iterator closest_odom = std::lower_bound(odom_updates.rbegin(), odom_updates.rend(), timestamp_, OdometryComparison());
+    if (closest_odom != odom_updates.rend()) {
+        if (timestamp_ - closest_odom->timestamp < max_stale_odom_time_) {
+            odom_updated_ = true;
+            odometry_ = *closest_odom;
+        }
+    }
 }
 
 void frame::set_cam_pose(const Mat44_t& cam_pose_cw) {

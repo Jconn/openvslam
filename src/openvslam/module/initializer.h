@@ -38,6 +38,7 @@ public:
     //! Destructor
     ~initializer();
 
+    bool set_initial_pose(const Mat44_t& cam_pose_cw);
     //! Reset initializer
     void reset();
 
@@ -119,6 +120,11 @@ private:
 
     //! Create an initial map with stereo or RGBD camera setup
     bool create_map_for_stereo(data::frame& curr_frm);
+    
+    bool init_pose_requested_ = false;
+    Mat44_t init_pose_;
+
+
 };
 
 } // namespace module

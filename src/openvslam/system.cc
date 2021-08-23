@@ -295,6 +295,12 @@ std::shared_ptr<Mat44_t> system::feed_RGBD_frame(const cv::Mat& rgb_img, const c
     return cam_pose_wc;
 }
 
+bool system::set_initial_pose(const Mat44_t& cam_pose_wc) {
+    request_reset();
+    const Mat44_t cam_pose_cw = cam_pose_wc.inverse();
+    return tracker_->set_initial_pose(cam_pose_cw);
+}
+
 bool system::update_pose(const Mat44_t& cam_pose_wc) {
     const Mat44_t cam_pose_cw = cam_pose_wc.inverse();
     bool status = tracker_->request_update_pose(cam_pose_cw);

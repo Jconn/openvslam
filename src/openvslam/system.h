@@ -122,6 +122,8 @@ public:
     //! Return failure in case if previous request was not finished.
     bool update_pose(const Mat44_t& cam_pose_wc);
 
+    bool set_initial_pose(const Mat44_t& cam_pose_wc);
+
     //-----------------------------------------
     // management for pause
 

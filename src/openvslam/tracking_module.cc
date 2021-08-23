@@ -129,6 +129,11 @@ std::vector<int> tracking_module::get_initial_matches() const {
     return initializer_.get_initial_matches();
 }
 
+bool tracking_module::set_initial_pose(const Mat44_t& cam_pose_cw)
+{
+    return initializer_.set_initial_pose(cam_pose_cw);
+}
+
 std::shared_ptr<Mat44_t> tracking_module::track_monocular_image(const cv::Mat& img, const double timestamp, const cv::Mat& mask) {
     const auto start = std::chrono::system_clock::now();
 
@@ -167,7 +172,10 @@ std::shared_ptr<Mat44_t> tracking_module::track_stereo_image(const cv::Mat& left
 
     // create current frame object
     curr_frm_ = data::frame(img_gray_, right_img_gray, timestamp, extractor_left_, extractor_right_, bow_vocab_, camera_, true_depth_thr_, mask);
-
+    if (odometry_updated_) {
+        curr_frm_.set_odom_update(odom_updates_);
+        odometry_updated_ = false;
+    }
     track();
 
     const auto end = std::chrono::system_clock::now();
@@ -182,6 +190,11 @@ std::shared_ptr<Mat44_t> tracking_module::track_stereo_image(const cv::Mat& left
 void tracking_module::update_odometry(const OdometryUpdate& update) {
     odometry_updated_ = true;
     odom_update_ = update;
+    odom_updates_.push_back(update);
+    if(odom_updates_.size() > odom_buffer_size_)
+    {
+        odom_updates_.erase(odom_updates_.begin());
+    }
 }
 
 std::shared_ptr<Mat44_t> tracking_module::track_RGBD_image(const cv::Mat& img, const cv::Mat& depthmap, const double timestamp, const cv::Mat& mask) {
@@ -195,9 +208,9 @@ std::shared_ptr<Mat44_t> tracking_module::track_RGBD_image(const cv::Mat& img, c
 
     // create current frame object
     curr_frm_ = data::frame(img_gray_, img_depth, timestamp, extractor_left_, bow_vocab_, camera_, true_depth_thr_, mask);
+
     if (odometry_updated_) {
-        spdlog::info("setting robot pose for current frame");
-        curr_frm_.set_odom_update(odom_update_);
+        curr_frm_.set_odom_update(odom_updates_);
         odometry_updated_ = false;
     }
 

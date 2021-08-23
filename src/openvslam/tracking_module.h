@@ -47,6 +47,9 @@ public:
     //! Destructor
     ~tracking_module();
 
+    //! Set the initial pose
+    bool set_initial_pose(const Mat44_t& cam_pose_cw);
+
     //! Set the mapping module
     void set_mapping_module(mapping_module* mapper);
 
@@ -76,8 +79,10 @@ public:
     //! (Note: Left and Right images must be stereo-rectified)
     std::shared_ptr<Mat44_t> track_stereo_image(const cv::Mat& left_img_rect, const cv::Mat& right_img_rect, const double timestamp, const cv::Mat& mask = cv::Mat{});
     
+    const size_t odom_buffer_size_ = 200;
     OdometryUpdate odom_update_;
     bool odometry_updated_ = false;
+    std::vector <OdometryUpdate> odom_updates_;
     void update_odometry(const OdometryUpdate& update);
     //! Track an RGBD frame
     //! (Note: RGB and Depth images must be aligned)
