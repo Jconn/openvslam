@@ -18,8 +18,16 @@
 
 #include <spdlog/spdlog.h>
 
+static std::string toString(const Eigen::MatrixXd& mat) {
+    std::stringstream ss;
+    ss << mat;
+    return ss.str();
+}
+
 namespace {
 using namespace openvslam;
+using Vector3d = Eigen::Vector3d;
+using AngleAxisd = Eigen::AngleAxisd;
 
 feature::orb_params get_orb_params(const YAML::Node& yaml_node) {
     spdlog::debug("load ORB parameters");
@@ -129,8 +137,7 @@ std::vector<int> tracking_module::get_initial_matches() const {
     return initializer_.get_initial_matches();
 }
 
-bool tracking_module::set_initial_pose(const Mat44_t& cam_pose_cw)
-{
+bool tracking_module::set_initial_pose(const Mat44_t& cam_pose_cw) {
     return initializer_.set_initial_pose(cam_pose_cw);
 }
 
@@ -191,8 +198,7 @@ void tracking_module::update_odometry(const OdometryUpdate& update) {
     odometry_updated_ = true;
     odom_update_ = update;
     odom_updates_.push_back(update);
-    if(odom_updates_.size() > odom_buffer_size_)
-    {
+    if (odom_updates_.size() > odom_buffer_size_) {
         odom_updates_.erase(odom_updates_.begin());
     }
 }
@@ -421,8 +427,8 @@ bool tracking_module::track_current_frame() {
         // Tracking mode
         if ((curr_frm_.odom_updated_ || twist_is_valid_) && last_reloc_frm_id_ + 2 < curr_frm_.id_) {
             // if the motion model is valid
-            succeeded = frame_tracker_.motion_based_track(curr_frm_, last_frm_, twist_);
-            spdlog::info("motion tracking");
+            // jc: changing the model to add in imu
+            succeeded = frame_tracker_.motion_based_track(curr_frm_, last_frm_, accumulated_twist_);
         }
         if (!succeeded) {
             succeeded = frame_tracker_.bow_match_based_track(curr_frm_, last_frm_, curr_frm_.ref_keyfrm_);
@@ -445,17 +451,42 @@ bool tracking_module::track_current_frame() {
     return succeeded;
 }
 
+void tracking_module::add_angular_vel(double timestamp, const Vec3_t& angular_vel) {
+    if (!twist_is_valid_) {
+        return;
+    }
+    added_imus_++;
+    double time_delta = timestamp - last_imu_timestamp_;
+    Vec3_t dr_orientation = angular_vel * time_delta;
+    Eigen::Quaterniond dr_q;
+    dr_q = AngleAxisd(dr_orientation[0], Vector3d::UnitX()) * AngleAxisd(dr_orientation[1], Vector3d::UnitY()) * AngleAxisd(dr_orientation[2], Vector3d::UnitZ());
+
+    Eigen::Translation3d dr_translation(twist_.block<3, 1>(0, 3) * time_delta / twist_time_);
+
+    dr_q.normalize();
+    Eigen::Affine3d dr_affine = dr_translation * dr_q;
+    Eigen::Matrix4d dr_mat = dr_affine.matrix();
+    accumulated_twist_ = dr_mat * accumulated_twist_;
+    last_imu_timestamp_ = timestamp;
+}
+
 void tracking_module::update_motion_model() {
+    spdlog::info("added imus: {}\nimu integrator\n {}\n twist\n {}", added_imus_, toString(accumulated_twist_), toString(twist_));
+    spdlog::info("added imus: {}", added_imus_);
+    added_imus_ = 0;
     if (last_frm_.cam_pose_cw_is_valid_) {
         Mat44_t last_frm_cam_pose_wc = Mat44_t::Identity();
         last_frm_cam_pose_wc.block<3, 3>(0, 0) = last_frm_.get_rotation_inv();
         last_frm_cam_pose_wc.block<3, 1>(0, 3) = last_frm_.get_cam_center();
         twist_is_valid_ = true;
         twist_ = curr_frm_.cam_pose_cw_ * last_frm_cam_pose_wc;
+        accumulated_twist_ = Mat44_t::Identity();
+        twist_time_ = curr_frm_.timestamp_ - last_frm_.timestamp_;
     }
     else {
         twist_is_valid_ = false;
         twist_ = Mat44_t::Identity();
+        accumulated_twist_ = Mat44_t::Identity();
     }
 }
 

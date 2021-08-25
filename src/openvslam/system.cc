@@ -295,6 +295,11 @@ std::shared_ptr<Mat44_t> system::feed_RGBD_frame(const cv::Mat& rgb_img, const c
     return cam_pose_wc;
 }
 
+void system::angular_vel(double timestamp, const Vec3_t& angular_vel) {
+    //the goal: the velocity vector from frames n-1 and n-2 should be split up and each segement should be rotated based on the incoming imu measurement
+    tracker_->add_angular_vel(timestamp, angular_vel);
+}
+
 bool system::set_initial_pose(const Mat44_t& cam_pose_wc) {
     request_reset();
     const Mat44_t cam_pose_cw = cam_pose_wc.inverse();

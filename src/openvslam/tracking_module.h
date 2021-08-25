@@ -56,6 +56,7 @@ public:
     //! Set the global optimization module
     void set_global_optimization_module(global_optimization_module* global_optimizer);
 
+    void add_angular_vel(double timestamp, const Vec3_t& angular_vel);
     //-----------------------------------------
     // interfaces
 
@@ -78,11 +79,16 @@ public:
     //! Track a stereo frame
     //! (Note: Left and Right images must be stereo-rectified)
     std::shared_ptr<Mat44_t> track_stereo_image(const cv::Mat& left_img_rect, const cv::Mat& right_img_rect, const double timestamp, const cv::Mat& mask = cv::Mat{});
-    
+    //jc
+    //
+    int added_imus_;
+    double twist_time_;
+    double last_imu_timestamp_;
+    Eigen::Matrix4d accumulated_twist_;
     const size_t odom_buffer_size_ = 200;
     OdometryUpdate odom_update_;
     bool odometry_updated_ = false;
-    std::vector <OdometryUpdate> odom_updates_;
+    std::vector<OdometryUpdate> odom_updates_;
     void update_odometry(const OdometryUpdate& update);
     //! Track an RGBD frame
     //! (Note: RGB and Depth images must be aligned)
