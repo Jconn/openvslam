@@ -499,9 +499,8 @@ void tracking_module::integrate_motion(double time_delta, const Vec3_t& angular_
 
     //rotate accumulated vel so that it stays in the body frame through this integration
     accumulated_vel_ = dr_q.matrix() * accumulated_vel_;
-    Vec3_t inv_accel = -imu_orientation_.inverse() * accel;
-    Eigen::Vector3d dr_translation(accumulated_vel_ * time_delta + inv_accel * time_delta * time_delta);
-    accumulated_vel_ += inv_accel * time_delta;
+    Eigen::Vector3d dr_translation(accumulated_vel_ * time_delta + accel * time_delta * time_delta);
+    accumulated_vel_ += accel * time_delta;
     dr_q.normalize();
     Eigen::Matrix4d dr_mat = Mat44_t::Identity();
     dr_mat.block<3, 3>(0, 0) = dr_q.matrix();
