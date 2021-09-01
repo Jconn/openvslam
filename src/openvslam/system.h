@@ -111,7 +111,7 @@ public:
 
     void update_odometry(const Mat44_t& robot_pose, const Vec3_t& linear_vel, const Vec3_t& angular_vel, double timestamp);
 
-    void angular_vel(double timestamp, const Vec3_t& angular_vel);
+    void angular_vel(double timestamp, const Vec3_t& angular_vel, const Vec3_t& accel, const Mat33_t & orientation);
     //! Feed an RGBD frame to SLAM system
     //! (Note: RGB and Depth images must be aligned)
     std::shared_ptr<Mat44_t> feed_RGBD_frame(const cv::Mat& rgb_img, const cv::Mat& depthmap, const double timestamp, const cv::Mat& mask = cv::Mat{});
@@ -123,7 +123,7 @@ public:
     //! Return failure in case if previous request was not finished.
     bool update_pose(const Mat44_t& cam_pose_wc);
 
-    bool set_initial_pose(const Mat44_t& cam_pose_wc);
+    bool set_initial_pose(const Mat44_t& cam_pose_cw);
 
     //-----------------------------------------
     // management for pause

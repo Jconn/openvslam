@@ -56,7 +56,7 @@ public:
     //! Set the global optimization module
     void set_global_optimization_module(global_optimization_module* global_optimizer);
 
-    void add_angular_vel(double timestamp, const Vec3_t& angular_vel);
+    void add_angular_vel(double timestamp, const Vec3_t& angular_vel, const Vec3_t& accel, const Mat33_t& orientation);
     //-----------------------------------------
     // interfaces
 
@@ -79,8 +79,11 @@ public:
     //! Track a stereo frame
     //! (Note: Left and Right images must be stereo-rectified)
     std::shared_ptr<Mat44_t> track_stereo_image(const cv::Mat& left_img_rect, const cv::Mat& right_img_rect, const double timestamp, const cv::Mat& mask = cv::Mat{});
+
     //jc
-    //
+    Mat44_t convert_to_cam_frame(const Mat44_t & imu_frame_mat);
+    Mat33_t imu_orientation_;
+    Vec3_t accumulated_vel_;
     int added_imus_;
     double twist_time_;
     double last_imu_timestamp_;
@@ -89,7 +92,11 @@ public:
     OdometryUpdate odom_update_;
     bool odometry_updated_ = false;
     std::vector<OdometryUpdate> odom_updates_;
+    std::vector<ImuUpdate> imu_updates_;
     void update_odometry(const OdometryUpdate& update);
+
+    void find_frame_twist(double old_frame, double new_frame);
+    void integrate_motion(double time_delta, const Vec3_t& angular_vel, const Vec3_t& accel);
     //! Track an RGBD frame
     //! (Note: RGB and Depth images must be aligned)
     std::shared_ptr<Mat44_t> track_RGBD_image(const cv::Mat& img, const cv::Mat& depthmap, const double timestamp, const cv::Mat& mask = cv::Mat{});

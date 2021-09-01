@@ -97,6 +97,7 @@ tracking_module::tracking_module(const std::shared_ptr<config>& cfg, system* sys
     if (camera_->setup_type_ == camera::setup_type_t::Stereo) {
         extractor_right_ = new feature::orb_extractor(tracking_params["max_num_keypoints"].as<unsigned int>(2000), orb_params);
     }
+    imu_orientation_ = Mat33_t::Identity();
 }
 
 tracking_module::~tracking_module() {
@@ -428,7 +429,11 @@ bool tracking_module::track_current_frame() {
         if ((curr_frm_.odom_updated_ || twist_is_valid_) && last_reloc_frm_id_ + 2 < curr_frm_.id_) {
             // if the motion model is valid
             // jc: changing the model to add in imu
-            succeeded = frame_tracker_.motion_based_track(curr_frm_, last_frm_, accumulated_twist_);
+            find_frame_twist(last_frm_.timestamp_, curr_frm_.timestamp_);
+            if (added_imus_ > 0)
+                succeeded = frame_tracker_.motion_based_track(curr_frm_, last_frm_, convert_to_cam_frame(accumulated_twist_));
+            else
+                succeeded = frame_tracker_.motion_based_track(curr_frm_, last_frm_, twist_);
         }
         if (!succeeded) {
             succeeded = frame_tracker_.bow_match_based_track(curr_frm_, last_frm_, curr_frm_.ref_keyfrm_);
@@ -451,28 +456,158 @@ bool tracking_module::track_current_frame() {
     return succeeded;
 }
 
-void tracking_module::add_angular_vel(double timestamp, const Vec3_t& angular_vel) {
-    if (!twist_is_valid_) {
-        return;
+void tracking_module::find_frame_twist(double old_frame, double new_frame) {
+    int init_frame = -1, end_frame = -1;
+    double delta;
+
+    for (size_t i = 0; i < imu_updates_.size(); ++i) {
+        if (end_frame != -1)
+            break;
+        if (imu_updates_[i].timestamp < old_frame) {
+            continue;
+        }
+        if (init_frame < 0) {
+            init_frame = i;
+            //delta = imu_updates_[i].timestamp - old_frame;
+            //integrate_angular_vel(delta, imu_updates_[i].angular_vel);
+            //added_imus_++;
+            continue;
+        }
+        if (imu_updates_[i].timestamp > new_frame) {
+            if (i != 0)
+                delta = new_frame - imu_updates_[i - 1].timestamp;
+            end_frame = i;
+        }
+        else {
+            delta = imu_updates_[i].timestamp - imu_updates_[i - 1].timestamp;
+            imu_orientation_ = imu_updates_[i - 1].orientation;
+        }
+        added_imus_++;
+        integrate_motion(delta, imu_updates_[i - 1].angular_vel, imu_updates_[i - 1].accel);
     }
-    added_imus_++;
-    double time_delta = timestamp - last_imu_timestamp_;
+    //erase everything before end frame
+    if (end_frame > 0) {
+        imu_updates_.erase(imu_updates_.begin(), imu_updates_.begin() + end_frame - 1);
+    }
+}
+
+void tracking_module::integrate_motion(double time_delta, const Vec3_t& angular_vel, const Vec3_t& accel) {
+    //spdlog::info("time delta is {} twist time is {}, angular vel is\n {}", time_delta, twist_time_, toString(angular_vel));
     Vec3_t dr_orientation = angular_vel * time_delta;
     Eigen::Quaterniond dr_q;
     dr_q = AngleAxisd(dr_orientation[0], Vector3d::UnitX()) * AngleAxisd(dr_orientation[1], Vector3d::UnitY()) * AngleAxisd(dr_orientation[2], Vector3d::UnitZ());
 
-    Eigen::Translation3d dr_translation(twist_.block<3, 1>(0, 3) * time_delta / twist_time_);
-
+    //rotate accumulated vel so that it stays in the body frame through this integration
+    accumulated_vel_ = dr_q.matrix() * accumulated_vel_;
+    Vec3_t inv_accel = -imu_orientation_.inverse() * accel;
+    Eigen::Vector3d dr_translation(accumulated_vel_ * time_delta + inv_accel * time_delta * time_delta);
+    accumulated_vel_ += inv_accel * time_delta;
     dr_q.normalize();
-    Eigen::Affine3d dr_affine = dr_translation * dr_q;
-    Eigen::Matrix4d dr_mat = dr_affine.matrix();
+    Eigen::Matrix4d dr_mat = Mat44_t::Identity();
+    dr_mat.block<3, 3>(0, 0) = dr_q.matrix();
+    dr_mat.block<3, 1>(0, 3) = dr_translation;
     accumulated_twist_ = dr_mat * accumulated_twist_;
-    last_imu_timestamp_ = timestamp;
+}
+Mat44_t tracking_module::convert_to_cam_frame(const Mat44_t& imu_frame_mat) {
+    Mat44_t x_rot_180, y_rot_90;
+    y_rot_90 << 0.7071068, 0.0000000, 0.7071068, 0,
+        0.0000000, 1.0000000, 0.0000000, 0,
+        -0.7071068, 0.0000000, 0.7071068, 0,
+        0, 0, 0, 1;
+
+    x_rot_180 << 1.0000000, 0.0000000, 0.0000000, 0,
+        0.0000000, 0.0000000, -1.0000000, 0,
+        0.0000000, 1.0000000, 0.0000000, 0,
+        0, 0, 0, 1;
+
+    Mat33_t rot_cv_to_ros_map_frame;
+    Eigen::Affine3d imu_to_cam_affine;
+    rot_cv_to_ros_map_frame << 0, -1, 0,
+        0, 0, -1,
+        1, 0, 0;
+    Eigen::Affine3d cv_to_ros_affine(rot_cv_to_ros_map_frame);
+    //move to its own evaluation so this temp variable is not accidently used outside of this scope
+    Mat44_t cam_to_imu_mat;
+    cam_to_imu_mat << 0.0148655429818, -0.999880929698, 0.00414029679422, -0.0216401454975,
+        0.999557249008, 0.0149672133247, 0.025715529948, -0.064676986768,
+        -0.0257744366974, 0.00375618835797, 0.999660727178, 0.00981073058949,
+        0.0, 0.0, 0.0, 1.0;
+    Eigen::Quaterniond q(cam_to_imu_mat.block<3, 3>(0, 0));
+    Eigen::Translation3d trans(cam_to_imu_mat.block<3, 1>(0, 3));
+    Eigen::Affine3d cam_to_imu_affine(cam_to_imu_mat);
+    imu_to_cam_affine = cam_to_imu_affine.inverse();
+
+    Eigen::Affine3d imu_affine(imu_frame_mat);
+    Eigen::Affine3d init_position(Mat44_t::Identity());
+
+    //find position one for cam
+    Mat33_t imu_ori = imu_orientation_;
+    //the imu transform orientation times the imu to camera orientation should lead to the camera transform
+    //there will be a remaining transform after that.. that's what needs to be applied
+    //the final piece
+    //(ros to cv * imu ori * imu to cam ori).inverse() * cam ori
+    Mat44_t extra_rotation = Mat44_t::Identity();
+    Mat44_t extra_rotation_inv = Mat44_t::Identity();
+    extra_rotation.block<3, 3>(0, 0) = last_frm_.cam_pose_cw_.block<3, 3>(0, 0) * (rot_cv_to_ros_map_frame * imu_ori * imu_to_cam_affine.rotation()).inverse();
+    extra_rotation_inv.block<3, 3>(0, 0) = extra_rotation.block<3, 3>(0, 0).transpose();
+
+    Mat44_t last_frm_cam_pose_wc = Mat44_t::Identity();
+    last_frm_cam_pose_wc.block<3, 3>(0, 0) = last_frm_.get_rotation_inv();
+    last_frm_cam_pose_wc.block<3, 1>(0, 3) = last_frm_.get_cam_center();
+
+    // take the world to camera transform, convert it to ros coordinates, and then apply the camera to imu transform
+    // and then add the imu dead reckoning to determine imu position
+    // and then convert back to camera frame, and then convert back to cv coordinates, and then apply the inverse to get to the camera to world transform
+    //
+    //spdlog::info("cam to imu mat:\n{}\n", toString(cam_to_imu_mat));
+    //spdlog::info("cam to imu affine mat:\n{}\n", toString(cam_to_imu_affine.matrix()));
+
+    //spdlog::info("cv to ros:\n{}\n", toString(rot_cv_to_ros_map_frame));
+    //spdlog::info("cv to ros affine mat:\n{}\n", toString(rot_cv_to_ros_map_frame.matrix()));
+    Mat44_t imu_1 = cam_to_imu_affine.matrix() * last_frm_.cam_pose_cw_;
+    Mat44_t imu_2 = imu_affine.inverse().matrix() * imu_1;
+    Mat44_t cam_2 = imu_to_cam_affine.matrix() * imu_2;
+
+    //Mat44_t cam_2 = Mat44_t::Identity();
+    //cam_2.block<3, 3>(0, 0) = cam_2_world.block<3, 3>(0, 0).transpose();
+    //cam_2.block<3, 1>(0, 3) = -cam_2.block<3, 3>(0, 0) * cam_2_world.block<3, 1>(0, 3);
+
+    //spdlog::info("the extra rotation place:\n{}\n", toString(extra_rotation));
+    //spdlog::info("cam to imu:\n{}\n", toString(cam_to_imu_mat));
+
+    //spdlog::info("imu1:\n{}\nimu2:\n{}", toString(imu_1), toString(imu_2));
+    //spdlog::info("w1cam:\n{}", toString(last_frm_cam_pose_wc));
+    //spdlog::info("w2cam:\n{}", toString(cam_2_world));
+    //spdlog::info("cam1world:\n{}", toString(last_frm_.cam_pose_cw_));
+    //spdlog::info("cam2world\n{}", toString(cam_2));
+    //Eigen::Affine3d cam2 = extra_rotation * rot_cv_to_ros_map_frame * imu_to_cam_affine * imu_affine;
+    //Eigen::Affine3d cam1 = extra_rotation * rot_cv_to_ros_map_frame * imu_to_cam_affine * init_position;
+    //spdlog::info("cam2:\n{}\ncam1\n{}", toString(cam2.matrix()), toString(cam1.matrix()));
+    //Eigen::Vector3d delta_motion = cam2.translation() - cam1.translation();
+    //Eigen::Translation3d delta_trans(delta_motion);
+    //Mat33_t delta_rot = cam2.rotation() * (cam1.rotation().inverse());
+    //Eigen::Affine3d cam_affine(delta_trans * delta_rot);
+    //Eigen::Affine3d cam_affine = (cam1.inverse() * cam2);
+    //
+
+    //Mat44_t cam_frame_mat = ((rot_cv_to_ros_map_frame * imu_affine * imu_to_cam_affine).inverse()).matrix();
+    //cam_affine
+    //Mat44_t cam_frame_mat = cam_affine.matrix();
+    //Mat44_t cam_frame_mat = cam_affine.matrix();
+    Mat44_t cam_frame_mat = cam_2 * last_frm_cam_pose_wc;
+    //spdlog::info("converting from: \n{}\nimu_mat, to:\n{}\ninverse\n{}", toString(imu_affine.matrix()), toString(cam_frame_mat));
+    return cam_frame_mat;
+}
+void tracking_module::add_angular_vel(double timestamp, const Vec3_t& angular_vel, const Vec3_t& accel, const Mat33_t& orientation) {
+    if (!twist_is_valid_) {
+        return;
+    }
+    imu_updates_.push_back(ImuUpdate(angular_vel, accel, orientation, timestamp));
 }
 
 void tracking_module::update_motion_model() {
-    spdlog::info("added imus: {}\nimu integrator\n {}\n twist\n {}", added_imus_, toString(accumulated_twist_), toString(twist_));
-    spdlog::info("added imus: {}", added_imus_);
+    //spdlog::info("added imus: {}\nimu integrator\n {}\n twist\n {}", added_imus_, toString(convert_to_cam_frame(accumulated_twist_)), toString(twist_));
+    //spdlog::info("added imus: {}", added_imus_);
     added_imus_ = 0;
     if (last_frm_.cam_pose_cw_is_valid_) {
         Mat44_t last_frm_cam_pose_wc = Mat44_t::Identity();
@@ -480,13 +615,31 @@ void tracking_module::update_motion_model() {
         last_frm_cam_pose_wc.block<3, 1>(0, 3) = last_frm_.get_cam_center();
         twist_is_valid_ = true;
         twist_ = curr_frm_.cam_pose_cw_ * last_frm_cam_pose_wc;
+
         accumulated_twist_ = Mat44_t::Identity();
+        accumulated_vel_ = Vec3_t::Zero();
+
+        //find the current velocity of the imu
+        Mat44_t cam_to_imu_mat;
+        cam_to_imu_mat << 0.0148655429818, -0.999880929698, 0.00414029679422, -0.0216401454975,
+            0.999557249008, 0.0149672133247, 0.025715529948, -0.064676986768,
+            -0.0257744366974, 0.00375618835797, 0.999660727178, 0.00981073058949,
+            0.0, 0.0, 0.0, 1.0;
+        Eigen::Affine3d cam_to_imu_affine(cam_to_imu_mat);
+        Mat44_t imu_1 = cam_to_imu_affine.matrix() * last_frm_.cam_pose_cw_;
+        Mat44_t imu_world_to_1 = Mat44_t::Identity();
+        imu_world_to_1.block<3, 3>(0, 0) = imu_1.block<3, 3>(0, 0).inverse();
+        imu_world_to_1.block<3, 1>(0, 3) = -imu_1.block<3, 3>(0, 0).inverse() * imu_1.block<3, 1>(0, 3);
+        Mat44_t imu_2 = cam_to_imu_affine.matrix() * curr_frm_.cam_pose_cw_;
+        Mat44_t imu_twist = imu_2 * imu_world_to_1;
         twist_time_ = curr_frm_.timestamp_ - last_frm_.timestamp_;
+        accumulated_vel_ = -imu_twist.block<3, 1>(0, 3) / twist_time_;
     }
     else {
         twist_is_valid_ = false;
         twist_ = Mat44_t::Identity();
         accumulated_twist_ = Mat44_t::Identity();
+        accumulated_vel_ << 0, 0, 0;
     }
 }
 

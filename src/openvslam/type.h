@@ -116,6 +116,15 @@ struct OdometryUpdate {
     double timestamp;
 };
 
+struct ImuUpdate {
+    ImuUpdate(Vec3_t av, Vec3_t acc, Mat33_t ori, double t)
+        : angular_vel(av), accel(acc), orientation(ori), timestamp(t){};
+    Vec3_t angular_vel;
+    Vec3_t accel;
+    Mat33_t orientation;
+    double timestamp;
+};
+
 struct OdometryComparison {
     bool operator()(const OdometryUpdate& odom_update, const double& timestamp) { return odom_update.timestamp > timestamp; }
 };
