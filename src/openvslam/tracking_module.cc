@@ -480,9 +480,9 @@ void tracking_module::find_frame_twist(double old_frame, double new_frame) {
         }
         else {
             delta = imu_updates_[i].timestamp - imu_updates_[i - 1].timestamp;
-            imu_orientation_ = imu_updates_[i - 1].orientation;
         }
         added_imus_++;
+        imu_orientation_ = imu_updates_[i - 1].orientation;
         integrate_motion(delta, imu_updates_[i - 1].angular_vel, imu_updates_[i - 1].accel);
     }
     //erase everything before end frame
@@ -496,12 +496,14 @@ void tracking_module::integrate_motion(double time_delta, const Vec3_t& angular_
     Vec3_t dr_orientation = angular_vel * time_delta;
     Eigen::Quaterniond dr_q;
     dr_q = AngleAxisd(dr_orientation[0], Vector3d::UnitX()) * AngleAxisd(dr_orientation[1], Vector3d::UnitY()) * AngleAxisd(dr_orientation[2], Vector3d::UnitZ());
+    dr_q.normalize();
 
     //rotate accumulated vel so that it stays in the body frame through this integration
     accumulated_vel_ = dr_q.matrix() * accumulated_vel_;
+    //Vec3_t inv_accel = -imu_orientation_.inverse() * accel;
+
     Eigen::Vector3d dr_translation(accumulated_vel_ * time_delta + accel * time_delta * time_delta);
     accumulated_vel_ += accel * time_delta;
-    dr_q.normalize();
     Eigen::Matrix4d dr_mat = Mat44_t::Identity();
     dr_mat.block<3, 3>(0, 0) = dr_q.matrix();
     dr_mat.block<3, 1>(0, 3) = dr_translation;
